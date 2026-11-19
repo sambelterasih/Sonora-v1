@@ -2,22 +2,46 @@ const DEFAULT_BASE = "https://magic-chords.dev/api/v1";
 const CORS = {"Access-Control-Allow-Origin":"*","Access-Control-Allow-Methods":"GET,POST,OPTIONS","Access-Control-Allow-Headers":"Content-Type,Authorization"};
 const json = (data, status=200) => new Response(JSON.stringify(data), {status, headers:{"Content-Type":"application/json; charset=utf-8", ...CORS}});
 function getVideoId(input){try{const u=new URL(input);if(u.hostname==="youtu.be")return u.pathname.slice(1).split("/")[0]||null;if(!/(^|\.)youtube\.com$/.test(u.hostname))return null;if(u.pathname==="/watch")return u.searchParams.get("v");const p=u.pathname.split("/").filter(Boolean);if(["embed","shorts","live"].includes(p[0]))return p[1]||null;return null;}catch{return null;}}
-
-function getSpotifyTrack(input){
- try{const u=new URL(input);if(u.protocol!=="https:"||u.hostname!=="open.spotify.com")return null;const parts=u.pathname.split("/").filter(Boolean);const i=parts.findIndex(x=>x==="track");if(i<0||!parts[i+1])return null;const id=parts[i+1].split("?")[0];return /^[A-Za-z0-9]{22}$/.test(id)?id:null;}catch{return null;}
-}
+function getSpotifyTrack(input){try{const u=new URL(input);if(u.protocol!=="https:"||u.hostname!=="open.spotify.com")return null;const parts=u.pathname.split("/").filter(Boolean);const i=parts.findIndex(x=>x==="track");if(i<0||!parts[i+1])return null;const id=parts[i+1].split("?")[0];return /^[A-Za-z0-9]{22}$/.test(id)?id:null;}catch{return null;}}
 function parseDuration(iso){const m=String(iso||"").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);return m?Number(m[1]||0)*3600+Number(m[2]||0)*60+Number(m[3]||0):null;}
 async function bodyJson(r){return await r.json().catch(()=>({}));}
+const norm=s=>String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]/g,"");
+function titleMatch(a,b){const x=norm(a),y=norm(b);if(!x||!y)return 0;if(x===y)return 1;if(x.includes(y)||y.includes(x))return Math.min(x.length,y.length)/Math.max(x.length,y.length);return 0;}
+function keyFromText(v){if(!v)return null;let s=String(v).trim().replace(/♯/g,"#").replace(/♭/g,"b");const m=s.match(/^([A-Ga-g])([#b]?)(?:\s*(major|maj|minor|min|m))?$/i);if(!m)return null;const mode=/^(minor|min|m)$/i.test(m[3]||"")?"Minor":/^(major|maj)$/i.test(m[3]||"")?"Major":"";return m[1].toUpperCase()+m[2]+(mode?" "+mode:"");}
+function getArtists(row){if(Array.isArray(row?.artists))return row.artists.map(a=>typeof a==="string"?a:a?.name).filter(Boolean).join(", ");if(Array.isArray(row?.artist))return row.artist.map(a=>typeof a==="string"?a:a?.name).filter(Boolean).join(", ");return row?.artist?.name||row?.artist_name||row?.artist||null;}
+async function musicDatabaseLookup(env,title,artist){
+ const sources=[],candidates=[];const cleanTitle=String(title||"").trim(),cleanArtist=String(artist||"").trim();
+ if(!cleanTitle)return {data:{},sources,errors:["Judul lagu tidak tersedia untuk pencarian database."]};
+ if(env.SONOVAULT_API_KEY&&cleanArtist){
+  try{const q=new URLSearchParams({title:cleanTitle,artist:cleanArtist,limit:"5"});const r=await fetch(`https://api.sonovault.now/v1/tracks/search?${q}`,{headers:{"x-api-key":env.SONOVAULT_API_KEY,Accept:"application/json"}});const d=await bodyJson(r);if(r.ok){const rows=Array.isArray(d.results)?d.results:[];const ranked=rows.map(x=>({x,score:cleanArtist?titleMatch(x.title,cleanTitle)*0.65+titleMatch(getArtists(x),cleanArtist)*0.35:titleMatch(x.title,cleanTitle)})).sort((a,b)=>b.score-a.score);const best=ranked[0];if(best&&best.score>=0.78){const x=best.x;candidates.push({source:"Sonovault",score:best.score,bpm:Number(x.bpm)||null,key:keyFromText(x.key_musical||x.key||x.key_name),durationSeconds:Number(x.duration_seconds||x.duration)||null,title:x.title,artist:getArtists(x),isrc:x.isrc||null});sources.push("Sonovault");}}else sources.push(`Sonovault: HTTP ${r.status}`);}catch{sources.push("Sonovault: tidak dapat dihubungi");}
+ }
+ if(env.GETSONGBPM_API_KEY){
+  try{const lookup=cleanArtist?`song:${cleanTitle} artist:${cleanArtist}`:`song:${cleanTitle}`;const q=new URLSearchParams({api_key:env.GETSONGBPM_API_KEY,type:"song",lookup,limit:"8"});const r=await fetch(`https://api.getsong.co/search/?${q}`,{headers:{Accept:"application/json"}});const d=await bodyJson(r);if(r.ok&&Array.isArray(d.search)){const ranked=d.search.map(x=>({x,score:cleanArtist?titleMatch(x.title,cleanTitle)*0.65+titleMatch(getArtists(x),cleanArtist)*0.35:titleMatch(x.title,cleanTitle)})).sort((a,b)=>b.score-a.score);const best=ranked[0];if(best&&best.score>=(cleanArtist?0.78:0.9)){let x=best.x;const detailUrl=new URL("https://api.getsong.co/song/");detailUrl.search=new URLSearchParams({api_key:env.GETSONGBPM_API_KEY,id:x.id});const dr=await fetch(detailUrl,{headers:{Accept:"application/json"}});const dd=await bodyJson(dr);if(dr.ok&&dd.song)x=dd.song;candidates.push({source:"GetSongBPM",score:best.score,bpm:Number(x.tempo)||Number(x.bpm)||null,key:keyFromText(x.key_of||x.key),timeSignature:x.time_sig||null,durationSeconds:Number(x.duration)||null,title:x.title||x.song_title,artist:getArtists(x)||getArtists(best.x)});sources.push("GetSongBPM");}}else sources.push(`GetSongBPM: HTTP ${r.status}`);}catch{sources.push("GetSongBPM: tidak dapat dihubungi");}
+ }
+ const data={title:cleanTitle,artist:cleanArtist||null,bpm:null,key:null,timeSignature:null,durationSeconds:null,chords:null,fieldSources:{}};
+ for(const field of ["bpm","key","timeSignature","durationSeconds"]){const found=candidates.find(c=>c[field]!==null&&c[field]!==undefined&&c[field]!=="");if(found){data[field]=found[field];data.fieldSources[field]=found.source;}}
+ // Only publish a candidate's artist/title when its match passed the confidence threshold.
+ const best=candidates.slice().sort((a,b)=>b.score-a.score)[0];if(best){data.title=best.title||data.title;data.artist=best.artist||data.artist;}
+ return {data,sources:[...new Set(sources)],errors:[]};
+}
 async function handleApi(request,env,url){
  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
- if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY / MUSIC LAB Worker"});
+ if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY / MUSIC LAB Worker",version:"2.5.0"});
  if(url.pathname==="/api/lookup"&&request.method==="POST"){
   const body=await bodyJson(request),id=getVideoId(body.url||"");if(!id||!/^[\w-]{11}$/.test(id))return json({error:"Masukkan URL YouTube atau YouTube Music yang valid."},400);
   try{const endpoint=`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`;const r=await fetch(endpoint);if(!r.ok)throw new Error("Video tidak ditemukan atau tidak publik.");const oe=await r.json();let durationSeconds=null;if(env.YOUTUBE_API_KEY){const u=new URL("https://www.googleapis.com/youtube/v3/videos");u.search=new URLSearchParams({part:"contentDetails",id,key:env.YOUTUBE_API_KEY});const dr=await fetch(u);if(dr.ok){const d=await dr.json();durationSeconds=parseDuration(d.items?.[0]?.contentDetails?.duration);}}return json({success:true,metadata:{title:oe.title,artist:oe.author_name,thumbnail:oe.thumbnail_url,durationSeconds,videoId:id,watchUrl:`https://www.youtube.com/watch?v=${id}`}});}catch(e){return json({error:e.message||"Gagal mengambil metadata YouTube."},502);}
  }
  if(url.pathname==="/api/spotify/lookup"&&request.method==="POST"){
   const body=await bodyJson(request),id=getSpotifyTrack(body.url||"");if(!id)return json({error:"Masukkan link lagu Spotify yang valid (open.spotify.com/track/...)."},400);
-  try{const trackUrl=`https://open.spotify.com/track/${id}`;const r=await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(trackUrl)}`,{headers:{Accept:"application/json"}});if(!r.ok)throw new Error("Spotify tidak dapat memberikan metadata untuk link ini.");const oe=await r.json();return json({success:true,metadata:{title:oe.title||"Spotify track",artist:null,thumbnail:oe.thumbnail_url||null,durationSeconds:null,trackId:id,watchUrl:trackUrl,embedUrl:`https://open.spotify.com/embed/track/${id}`}});}catch(e){return json({error:e.message||"Gagal mengambil metadata Spotify."},502);}
+  try{const trackUrl=`https://open.spotify.com/track/${id}`;const r=await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(trackUrl)}`,{headers:{Accept:"application/json"}});if(!r.ok)throw new Error("Spotify tidak dapat memberikan metadata untuk link ini.");const oe=await r.json();let artist=null,durationSeconds=null;
+   // Spotify oEmbed intentionally exposes limited metadata. Read only public page metadata when present; never access or extract audio.
+   try{const page=await fetch(trackUrl,{headers:{Accept:"text/html"}});if(page.ok){const html=await page.text();const desc=html.match(/<meta[^>]+(?:name|property)=["'](?:description|og:description)["'][^>]+content=["']([^"']+)["']/i)?.[1]||html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["'](?:description|og:description)["']/i)?.[1]||"";const decoded=desc.replace(/&quot;/g,'"').replace(/&amp;/g,"&").replace(/&#x27;/g,"'");const am=decoded.match(/(?:Listen to|Stream)\s+.+?\s+by\s+(.+?)\s+on Spotify/i);if(am)artist=am[1].split(/[,.]/)[0].trim();}}
+   catch{}
+   return json({success:true,metadata:{title:oe.title||"Spotify track",artist,thumbnail:oe.thumbnail_url||null,durationSeconds,trackId:id,watchUrl:trackUrl,embedUrl:`https://open.spotify.com/embed/track/${id}`}});
+  }catch(e){return json({error:e.message||"Gagal mengambil metadata Spotify."},502);}
+ }
+ if(url.pathname==="/api/music-data/lookup"&&request.method==="POST"){
+  const body=await bodyJson(request);const title=String(body.title||"").slice(0,240),artist=String(body.artist||"").slice(0,240);if(!title)return json({error:"Judul lagu diperlukan."},400);const result=await musicDatabaseLookup(env,title,artist);return json({success:true,...result,configured:{sonovault:Boolean(env.SONOVAULT_API_KEY),getSongBPM:Boolean(env.GETSONGBPM_API_KEY)}});
  }
  if(url.pathname==="/api/analyze"&&request.method==="POST"){
   const body=await bodyJson(request),id=getVideoId(body.url||"");if(!id||!/^[\w-]{11}$/.test(id))return json({error:"URL YouTube tidak valid."},400);
