@@ -1,0 +1,6 @@
+{
+  "appId": "com.sonora.music",
+  "appName": "SONORA",
+  "webDir": "public",
+  "bundledWebRuntime": false
+}
