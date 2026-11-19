@@ -45,9 +45,29 @@ async function acrCloudIdentify(env,audioBase64,mimeType){
  return {title:song.title||null,artist:artists||null,album:song.album?.name||null,externalUrl:song.external_metadata?.spotify?.track?.id?`https://open.spotify.com/track/${song.external_metadata.spotify.track.id}`:song.external_metadata?.youtube?.vid?`https://www.youtube.com/watch?v=${song.external_metadata.youtube.vid}`:null,thumbnail:song.external_metadata?.spotify?.track?.images?.[0]?.url||null,isrc:song.external_ids?.isrc||null};
 }
 
+
+async function geminiMusicSearch(env, input){
+ const apiKey=env.GEMINI_API_KEY;
+ if(!apiKey)throw new Error("GEMINI_API_KEY belum diatur di Cloudflare Worker Secrets.");
+ const query=String(input||"").trim().slice(0,700);
+ if(!query)throw new Error("Masukkan judul-artis atau link YouTube/Spotify.");
+ const prompt=`Kamu adalah mesin pencari metadata musik. Cari di web menggunakan Google Search dan identifikasi rekaman yang tepat dari input ini: ${query}\n\nKembalikan HANYA JSON valid dengan skema: {"title":string|null,"artist":string|null,"duration_seconds":number|null,"bpm":number|null,"key":string|null,"time_signature":string|null,"confidence":"high"|"medium"|"low","notes":string,"sources":[{"title":string,"url":string}]}\nAturan: cocokkan judul dan artis dengan beberapa sumber; jika input berupa URL, identifikasi lagu dari metadata halaman publik dan hasil pencarian. Durasi harus durasi rekaman lagu, bukan durasi video jika video memuat intro/outro panjang. BPM harus angka tempo lagu. Key harus nada dasar beserta mayor/minor bila sumber mendukung (contoh C Minor). Birama contoh 4/4. Jangan pernah menebak. Jika tidak ditemukan atau sumber bertentangan, isi null dan jelaskan singkat di notes. Jangan menyamakan channel YouTube dengan artis kecuali jelas.`;
+ const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.GEMINI_MODEL||"gemini-2.5-flash")}:generateContent?key=${encodeURIComponent(apiKey)}`;
+ const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:0.1,responseMimeType:"application/json"}})});
+ const data=await bodyJson(response);
+ if(!response.ok)throw new Error(data.error?.message||`Gemini API gagal (HTTP ${response.status}).`);
+ const text=(data.candidates||[]).flatMap(c=>c.content?.parts||[]).map(x=>x.text||"").join("\n");
+ if(!text)throw new Error("Gemini tidak mengembalikan hasil. Coba lagi.");
+ let parsed;try{parsed=JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g,""));}catch{const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error("Format hasil Gemini tidak valid.");parsed=JSON.parse(m[0]);}
+ const num=v=>Number.isFinite(Number(v))&&Number(v)>0?Number(v):null;
+ const sources=Array.isArray(parsed.sources)?parsed.sources.filter(x=>x&&typeof x.url==="string"&&/^https?:\/\//.test(x.url)).slice(0,8):[];
+ return {success:true,data:{title:parsed.title||null,artist:parsed.artist||null,durationSeconds:num(parsed.duration_seconds),bpm:num(parsed.bpm),key:keyFromText(parsed.key),timeSignature:parsed.time_signature||null,confidence:parsed.confidence||"low",notes:parsed.notes||"",sources}};
+}
+
 async function handleApi(request,env,url){
  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
- if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY / MUSIC LAB Worker",version:"2.6.0"});
+ if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY AI Music Finder",version:"2.8.0",geminiConfigured:Boolean(env.GEMINI_API_KEY)});
+ if(url.pathname==="/api/ai/music-search"&&request.method==="POST"){const body=await bodyJson(request);try{return json(await geminiMusicSearch(env,body.input));}catch(e){return json({error:e.message||"Pencarian AI gagal."},502);}}
  if(url.pathname==="/api/lookup"&&request.method==="POST"){
   const body=await bodyJson(request),id=getVideoId(body.url||"");if(!id||!/^[\w-]{11}$/.test(id))return json({error:"Masukkan URL YouTube atau YouTube Music yang valid."},400);
   try{const endpoint=`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`;const r=await fetch(endpoint);if(!r.ok)throw new Error("Video tidak ditemukan atau tidak publik.");const oe=await r.json();let durationSeconds=null;if(env.YOUTUBE_API_KEY){const u=new URL("https://www.googleapis.com/youtube/v3/videos");u.search=new URLSearchParams({part:"contentDetails",id,key:env.YOUTUBE_API_KEY});const dr=await fetch(u);if(dr.ok){const d=await dr.json();durationSeconds=parseDuration(d.items?.[0]?.contentDetails?.duration);}}return json({success:true,metadata:{title:oe.title,artist:oe.author_name,thumbnail:oe.thumbnail_url,durationSeconds,videoId:id,watchUrl:`https://www.youtube.com/watch?v=${id}`}});}catch(e){return json({error:e.message||"Gagal mengambil metadata YouTube."},502);}
