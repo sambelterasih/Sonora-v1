@@ -67,3 +67,14 @@ Tambahkan Cloudflare Worker Secret bernama `GEMINI_API_KEY` dari Google AI Studi
 
 ### Catatan akurasi dan biaya
 Gemini melakukan pencarian web; hasil dapat bervariasi dan tidak semua lagu memiliki BPM/Key/birama yang dipublikasikan. Google dapat mengubah kuota gratis dan ketersediaan Search grounding. Periksa halaman harga resmi Gemini sebelum penggunaan rutin: https://ai.google.dev/gemini-api/docs/pricing.
+
+
+## V2.9 — Gemini 3.8 Flash + Interactions API
+
+- Mengganti endpoint lama `models/...:generateContent` ke `POST /v1beta/interactions`.
+- Model default: `gemini-3.8-flash`.
+- API key dikirim melalui header `x-goog-api-key`; tetap simpan sebagai Cloudflare Worker Secret `GEMINI_API_KEY`.
+- Pencarian web menggunakan tool `google_search` pada Interactions API. **Catatan:** menurut tabel harga Google, Google Search grounding untuk Gemini 3.8 Flash tidak tersedia pada Free Tier; penggunaan fitur ini dapat memerlukan billing aktif. Token model memiliki kuota Free Tier tersendiri.
+- Opsional: atur Worker variable `GEMINI_MODEL` jika ingin memilih model lain yang didukung.
+
+Setelah mengganti source di GitHub, tunggu deployment Cloudflare selesai. Secret `GEMINI_API_KEY` yang sudah dibuat tidak perlu diganti.
