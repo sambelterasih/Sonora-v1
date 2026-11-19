@@ -1,8 +1,13 @@
-# CHORD SASY / MUSIC LAB v2.4
+# CHORD SASY / MUSIC LAB v2.5
 
-Aplikasi web analisis musik berbasis link YouTube / YouTube Music, dengan pratinjau metadata Spotify. Proyek ini memakai Cloudflare Worker untuk backend dan folder `public` untuk frontend.
+Aplikasi web pencarian data musik berbasis link Spotify dan YouTube / YouTube Music. YouTube tetap mendukung jalur analisis audio. Proyek ini memakai Cloudflare Worker untuk backend dan folder `public` untuk frontend.
 
 ## Perubahan versi ini
+- Input Spotify dan YouTube sama-sama menjalankan pencarian database musik.
+- Integrasi opsional Sonovault (BPM dan Key) serta GetSongBPM (BPM, Key, dan Time Signature).
+- Hasil dari database hanya ditampilkan jika judul/artis cocok dengan tingkat keyakinan minimum; nilai yang tidak tersedia tetap kosong.
+- Spotify mengambil metadata publik untuk judul, artis (jika tersedia), cover, dan tautan; tidak mengunduh atau menganalisis audio Spotify.
+- Hasil database melengkapi parameter yang belum tersedia dari analisis audio YouTube.
 - Nama aplikasi menjadi **CHORD SASY / MUSIC LAB**.
 - Nama artist dibersihkan dari akhiran `- Topic`.
 - Nada dasar ditampilkan seperti `Key A Major / Do = A`.
@@ -15,8 +20,10 @@ Aplikasi web analisis musik berbasis link YouTube / YouTube Music, dengan pratin
 3. Buka terminal pada folder proyek, lalu jalankan `npm install`.
 4. Jalankan `npx wrangler login`.
 5. (Opsional) Atur YouTube API key untuk mengambil durasi video: `npx wrangler secret put YOUTUBE_API_KEY`.
-6. Jalankan `npm run deploy`.
-7. Tes URL Worker dengan menambahkan `/api/health`.
+6. Untuk mengaktifkan pencarian BPM/Key otomatis, buat API key gratis Sonovault (kuota gratis 1.000 request/bulan), lalu jalankan `npx wrangler secret put SONOVAULT_API_KEY` dan masukkan key saat diminta.
+7. Opsional: GetSongBPM menyediakan API gratis dengan syarat backlink wajib. Daftarkan aplikasi di `https://getsongbpm.com/api`, lalu jalankan `npx wrangler secret put GETSONGBPM_API_KEY`.
+8. Jalankan `npm run deploy`.
+9. Tes URL Worker dengan menambahkan `/api/health`.
 
 **Catatan:** Nama Worker di `wrangler.jsonc` tetap `sonora-v1` supaya deployment memperbarui Worker lama, bukan membuat Worker baru. Jika ingin nama Worker baru, ubah field `name` sebelum deploy.
 
@@ -27,7 +34,17 @@ Aplikasi web analisis musik berbasis link YouTube / YouTube Music, dengan pratin
 4. Jalankan `npm run cap:open:android` dan build APK dari Android Studio.
 
 ## Batasan analisis
-Backend masih memakai provider Magic Chords yang sudah digunakan versi sebelumnya. Kualitas dan ketersediaan hasil mengikuti layanan tersebut. Pemilihan key bagian awal hanya bisa dilakukan bila provider mengirimkan informasi section/intro atau key per bagian; bila tidak, aplikasi menampilkan key keseluruhan yang diberikan provider. Belum ada integrasi API database musik eksternal dalam paket ini karena endpoint dan akses API alternatif belum terverifikasi. Jangan menganggap birama atau key yang tidak diberikan provider sebagai hasil pasti.
+- Sonovault menyediakan pencarian katalog beserta BPM dan Key. GetSongBPM menyediakan BPM, Key, dan Time Signature. Kedua layanan memerlukan API key yang disimpan sebagai Cloudflare Worker secrets, bukan di frontend.
+- Tanpa API key database, input Spotify tetap dikenali dan pemutar Spotify ditampilkan, tetapi nilai musik dari database akan kosong. Metadata Spotify oEmbed tidak selalu memberikan nama artis atau durasi.
+- Chord Progression belum diambil dari sumber database yang terverifikasi; tetap ditampilkan kosong kecuali provider analisis audio YouTube mengirimkannya.
+- Jalur YouTube tetap memakai provider Magic Chords. Jika hasil audio tidak lengkap, database yang dikonfigurasi akan melengkapi parameter yang kosong.
+- Pemilihan Key bagian awal hanya bisa dilakukan bila provider mengirim informasi section/intro atau key per bagian; jika tidak, aplikasi memakai key keseluruhan yang tersedia.
+- Jangan menganggap nilai yang tidak tersedia sebagai hasil pasti atau mengarangnya.
+
+## Sumber & dokumentasi
+- Sonovault API: `https://sonovault.now/` — paket gratis 1.000 permintaan/bulan; BPM dan Key tersedia pada hasil yang sudah dianalisis.
+- GetSongBPM API: `https://getsongbpm.com/api` — API gratis, API key diperlukan, backlink ke GetSongBPM wajib.
+- Spotify Web API tidak lagi menyediakan Audio Features/Audio Analysis untuk aplikasi baru; aplikasi ini tidak mengakses atau mengekstrak audio Spotify.
 
 
 ## Spotify links (v2.4)
