@@ -73,3 +73,8 @@ Build APK melalui Android Studio. Untuk pembaruan berikutnya, jalankan `npx cap 
 6. Kembali ke CHORD SASY; hasil identifikasi dan data database akan muncul jika cocok.
 
 Jika hasilnya “tidak ditemukan”, coba lagu lain dan pastikan volume tidak mute. Jika capture kosong, aplikasi sumber mungkin memblokir playback capture. Fitur link YouTube/Spotify lama tetap dapat digunakan.
+
+
+## Cadangan mikrofon dan tampilan Key/Do
+
+Jika plugin Audio Internal tidak tersedia atau gagal, tombol Deteksi Lagu otomatis meminta izin mikrofon dan merekam cuplikan 12 detik. Situs harus berjalan melalui HTTPS. Key diprioritaskan dari database musik, sedangkan Do dipertahankan dari hasil deteksi audio saat tersedia. Jika hanya database yang tersedia, Do mengikuti nada dasar database dan bukan hasil analisis audio terpisah.
