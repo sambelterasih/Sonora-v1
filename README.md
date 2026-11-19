@@ -1,4 +1,4 @@
-# CHORD SASY / MUSIC LAB v2.5
+# CHORD SASY / MUSIC LAB v2.6
 
 Aplikasi web pencarian data musik berbasis link Spotify dan YouTube / YouTube Music. YouTube tetap mendukung jalur analisis audio. Proyek ini memakai Cloudflare Worker untuk backend dan folder `public` untuk frontend.
 
@@ -52,3 +52,7 @@ Aplikasi web pencarian data musik berbasis link Spotify dan YouTube / YouTube Mu
 - Spotify oEmbed provides a title and thumbnail; it does not provide the artist or duration in its documented response. The app shows those fields as unavailable rather than guessing.
 - Spotify links can be embedded for playback. BPM, key, time signature and chord analysis still require a corresponding YouTube / YouTube Music URL because this Worker does not download or extract Spotify audio.
 - Spotify content is not downloaded or submitted to an AI model. See Spotify developer policies before extending this integration.
+
+
+## v2.6 — Audio Internal Android (uji coba)
+Lihat `README-AUDIO-INTERNAL.md` untuk pemasangan plugin Android native dan konfigurasi ACRCloud. Mode ini hanya aktif di APK Android Capacitor (Android 10+), bukan browser biasa. Link YouTube/Spotify tetap tersedia.
