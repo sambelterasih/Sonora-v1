@@ -56,3 +56,14 @@ Aplikasi web pencarian data musik berbasis link Spotify dan YouTube / YouTube Mu
 
 ## v2.6 — Audio Internal Android (uji coba)
 Lihat `README-AUDIO-INTERNAL.md` untuk pemasangan plugin Android native dan konfigurasi ACRCloud. Mode ini hanya aktif di APK Android Capacitor (Android 10+), bukan browser biasa. Link YouTube/Spotify tetap tersedia.
+
+
+## V2.8 — AI Music Finder
+
+Versi ini menggunakan Gemini API dengan Google Search grounding untuk mencari metadata lagu berdasarkan judul-artis, URL YouTube, atau URL Spotify. Parameter: judul, artis, durasi, BPM, Key, dan birama. Data yang tidak didukung sumber dikembalikan sebagai null.
+
+### Konfigurasi
+Tambahkan Cloudflare Worker Secret bernama `GEMINI_API_KEY` dari Google AI Studio. Opsional: atur variable `GEMINI_MODEL` (default `gemini-2.5-flash`). Tidak perlu ACRCloud, Sonovault, GetSongBPM, atau YouTube API Key untuk mode pencarian AI ini.
+
+### Catatan akurasi dan biaya
+Gemini melakukan pencarian web; hasil dapat bervariasi dan tidak semua lagu memiliki BPM/Key/birama yang dipublikasikan. Google dapat mengubah kuota gratis dan ketersediaan Search grounding. Periksa halaman harga resmi Gemini sebelum penggunaan rutin: https://ai.google.dev/gemini-api/docs/pricing.
