@@ -24,9 +24,30 @@ async function musicDatabaseLookup(env,title,artist){
  const best=candidates.slice().sort((a,b)=>b.score-a.score)[0];if(best){data.title=best.title||data.title;data.artist=best.artist||data.artist;}
  return {data,sources:[...new Set(sources)],errors:[]};
 }
+
+async function acrCloudIdentify(env,audioBase64,mimeType){
+ const access=env.ACRCLOUD_ACCESS_KEY,secret=env.ACRCLOUD_ACCESS_SECRET;
+ if(!access||!secret)throw new Error("ACRCLOUD_ACCESS_KEY dan ACRCLOUD_ACCESS_SECRET belum diatur di Cloudflare Worker Secrets.");
+ if(!env.ACRCLOUD_HOST)throw new Error("ACRCLOUD_HOST belum diatur. Isi hostname region dari dashboard ACRCloud.");
+ if(typeof audioBase64!=="string"||audioBase64.length<1000||audioBase64.length>1800000)throw new Error("Cuplikan audio tidak valid atau terlalu besar.");
+ const binary=atob(audioBase64),bytes=new Uint8Array(binary.length);for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+ const host=env.ACRCLOUD_HOST.replace(/^https?:\/\//,"").replace(/\/$/,"");
+ const path="/v1/identify",timestamp=String(Math.floor(Date.now()/1000));
+ const signText=["POST",path,access,"audio","1",timestamp].join("\n");
+ const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(secret),{name:"HMAC",hash:"SHA-1"},false,["sign"]);
+ const sig=await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(signText));
+ const signature=btoa(String.fromCharCode(...new Uint8Array(sig)));
+ const form=new FormData();form.set("access_key",access);form.set("data_type","audio");form.set("sample_bytes",String(bytes.length));form.set("signature_version","1");form.set("signature",signature);form.set("timestamp",timestamp);form.set("sample",new Blob([bytes],{type:mimeType||"audio/wav"}),"internal-audio.wav");
+ const response=await fetch(`https://${host}${path}`,{method:"POST",body:form});const data=await bodyJson(response);
+ if(!response.ok||Number(data.status?.code)!==0)throw new Error(data.status?.msg||`Layanan pengenal lagu gagal (HTTP ${response.status}).`);
+ const song=data.metadata?.music?.[0];if(!song)throw new Error("Tidak ditemukan kecocokan lagu pada cuplikan audio.");
+ const artists=(song.artists||[]).map(x=>x.name).filter(Boolean).join(", ");
+ return {title:song.title||null,artist:artists||null,album:song.album?.name||null,externalUrl:song.external_metadata?.spotify?.track?.id?`https://open.spotify.com/track/${song.external_metadata.spotify.track.id}`:song.external_metadata?.youtube?.vid?`https://www.youtube.com/watch?v=${song.external_metadata.youtube.vid}`:null,thumbnail:song.external_metadata?.spotify?.track?.images?.[0]?.url||null,isrc:song.external_ids?.isrc||null};
+}
+
 async function handleApi(request,env,url){
  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
- if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY / MUSIC LAB Worker",version:"2.5.0"});
+ if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY / MUSIC LAB Worker",version:"2.6.0"});
  if(url.pathname==="/api/lookup"&&request.method==="POST"){
   const body=await bodyJson(request),id=getVideoId(body.url||"");if(!id||!/^[\w-]{11}$/.test(id))return json({error:"Masukkan URL YouTube atau YouTube Music yang valid."},400);
   try{const endpoint=`https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`;const r=await fetch(endpoint);if(!r.ok)throw new Error("Video tidak ditemukan atau tidak publik.");const oe=await r.json();let durationSeconds=null;if(env.YOUTUBE_API_KEY){const u=new URL("https://www.googleapis.com/youtube/v3/videos");u.search=new URLSearchParams({part:"contentDetails",id,key:env.YOUTUBE_API_KEY});const dr=await fetch(u);if(dr.ok){const d=await dr.json();durationSeconds=parseDuration(d.items?.[0]?.contentDetails?.duration);}}return json({success:true,metadata:{title:oe.title,artist:oe.author_name,thumbnail:oe.thumbnail_url,durationSeconds,videoId:id,watchUrl:`https://www.youtube.com/watch?v=${id}`}});}catch(e){return json({error:e.message||"Gagal mengambil metadata YouTube."},502);}
@@ -39,6 +60,10 @@ async function handleApi(request,env,url){
    catch{}
    return json({success:true,metadata:{title:oe.title||"Spotify track",artist,thumbnail:oe.thumbnail_url||null,durationSeconds,trackId:id,watchUrl:trackUrl,embedUrl:`https://open.spotify.com/embed/track/${id}`}});
   }catch(e){return json({error:e.message||"Gagal mengambil metadata Spotify."},502);}
+ }
+
+ if(url.pathname==="/api/audio/identify"&&request.method==="POST"){
+  const body=await bodyJson(request);try{const metadata=await acrCloudIdentify(env,body.audioBase64,body.mimeType);const database=await musicDatabaseLookup(env,metadata.title,metadata.artist||"");return json({success:true,metadata,database,message:"Lagu berhasil dikenali melalui audio internal. Parameter musik diambil dari database yang cocok; nilai yang tidak tersedia tetap kosong."});}catch(e){return json({error:e.message||"Gagal mengenali audio internal."},502);}
  }
  if(url.pathname==="/api/music-data/lookup"&&request.method==="POST"){
   const body=await bodyJson(request);const title=String(body.title||"").slice(0,240),artist=String(body.artist||"").slice(0,240);if(!title)return json({error:"Judul lagu diperlukan."},400);const result=await musicDatabaseLookup(env,title,artist);return json({success:true,...result,configured:{sonovault:Boolean(env.SONOVAULT_API_KEY),getSongBPM:Boolean(env.GETSONGBPM_API_KEY)}});
