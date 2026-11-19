@@ -1,4 +1,4 @@
-# CHORD SASY / MUSIC LAB v2.3
+# CHORD SASY / MUSIC LAB v2.4
 
 Aplikasi web analisis musik berbasis link YouTube / YouTube Music, dengan pratinjau metadata Spotify. Proyek ini memakai Cloudflare Worker untuk backend dan folder `public` untuk frontend.
 
@@ -30,7 +30,7 @@ Aplikasi web analisis musik berbasis link YouTube / YouTube Music, dengan pratin
 Backend masih memakai provider Magic Chords yang sudah digunakan versi sebelumnya. Kualitas dan ketersediaan hasil mengikuti layanan tersebut. Pemilihan key bagian awal hanya bisa dilakukan bila provider mengirimkan informasi section/intro atau key per bagian; bila tidak, aplikasi menampilkan key keseluruhan yang diberikan provider. Belum ada integrasi API database musik eksternal dalam paket ini karena endpoint dan akses API alternatif belum terverifikasi. Jangan menganggap birama atau key yang tidak diberikan provider sebagai hasil pasti.
 
 
-## Spotify links (v2.3)
+## Spotify links (v2.4)
 - Public Spotify track links (`https://open.spotify.com/track/...`) are supported for basic metadata preview using Spotify's official oEmbed endpoint.
 - Spotify oEmbed provides a title and thumbnail; it does not provide the artist or duration in its documented response. The app shows those fields as unavailable rather than guessing.
 - Spotify links can be embedded for playback. BPM, key, time signature and chord analysis still require a corresponding YouTube / YouTube Music URL because this Worker does not download or extract Spotify audio.
