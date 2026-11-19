@@ -1,1 +1,2 @@
-
+<!-- Merge this permission into android/app/src/main/AndroidManifest.xml, directly under <manifest>. -->
+<uses-permission android:name="android.permission.RECORD_AUDIO" />
