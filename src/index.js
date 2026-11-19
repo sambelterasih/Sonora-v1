@@ -51,13 +51,18 @@ async function geminiMusicSearch(env, input){
  if(!apiKey)throw new Error("GEMINI_API_KEY belum diatur di Cloudflare Worker Secrets.");
  const query=String(input||"").trim().slice(0,700);
  if(!query)throw new Error("Masukkan judul-artis atau link YouTube/Spotify.");
- const prompt=`Kamu adalah mesin pencari metadata musik. Cari di web menggunakan Google Search dan identifikasi rekaman yang tepat dari input ini: ${query}\n\nKembalikan HANYA JSON valid dengan skema: {"title":string|null,"artist":string|null,"duration_seconds":number|null,"bpm":number|null,"key":string|null,"time_signature":string|null,"confidence":"high"|"medium"|"low","notes":string,"sources":[{"title":string,"url":string}]}\nAturan: cocokkan judul dan artis dengan beberapa sumber; jika input berupa URL, identifikasi lagu dari metadata halaman publik dan hasil pencarian. Durasi harus durasi rekaman lagu, bukan durasi video jika video memuat intro/outro panjang. BPM harus angka tempo lagu. Key harus nada dasar beserta mayor/minor bila sumber mendukung (contoh C Minor). Birama contoh 4/4. Jangan pernah menebak. Jika tidak ditemukan atau sumber bertentangan, isi null dan jelaskan singkat di notes. Jangan menyamakan channel YouTube dengan artis kecuali jelas.`;
- const endpoint=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(env.GEMINI_MODEL||"gemini-2.5-flash")}:generateContent?key=${encodeURIComponent(apiKey)}`;
- const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{role:"user",parts:[{text:prompt}]}],tools:[{google_search:{}}],generationConfig:{temperature:0.1,responseMimeType:"application/json"}})});
+ const prompt=`Kamu adalah mesin pencari metadata musik. Identifikasi rekaman yang tepat dari input berikut: ${query}\n\nGunakan Google Search untuk memeriksa beberapa sumber tepercaya. Kembalikan data sebagai JSON sesuai skema. Aturan: cocokkan judul dan artis; jika input berupa URL, identifikasi lagu dari metadata publik dan hasil pencarian. Durasi adalah durasi rekaman lagu, bukan video dengan intro/outro panjang. BPM harus tempo lagu. Key harus nada dasar beserta mayor/minor bila sumber mendukung (contoh C Minor). Birama contoh 4/4. Jangan menebak. Jika tidak ditemukan atau sumber bertentangan, isi null dan jelaskan singkat di notes. Jangan menyamakan channel YouTube dengan artis kecuali jelas. Cantumkan URL sumber yang benar-benar mendukung data.`;
+ const schema={type:"object",properties:{title:{type:["string","null"]},artist:{type:["string","null"]},duration_seconds:{type:["number","null"]},bpm:{type:["number","null"]},key:{type:["string","null"]},time_signature:{type:["string","null"]},confidence:{type:"string",enum:["high","medium","low"]},notes:{type:"string"},sources:{type:"array",items:{type:"object",properties:{title:{type:"string"},url:{type:"string"}},required:["title","url"]}}},required:["title","artist","duration_seconds","bpm","key","time_signature","confidence","notes","sources"]};
+ const endpoint="https://generativelanguage.googleapis.com/v1beta/interactions";
+ const response=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":apiKey,"Api-Revision":"2026-05-20"},body:JSON.stringify({model:env.GEMINI_MODEL||"gemini-3.8-flash",input:prompt,tools:[{type:"google_search"}],generation_config:{temperature:0.1},response_format:{type:"text",mime_type:"application/json",schema}})});
  const data=await bodyJson(response);
- if(!response.ok)throw new Error(data.error?.message||`Gemini API gagal (HTTP ${response.status}).`);
- const text=(data.candidates||[]).flatMap(c=>c.content?.parts||[]).map(x=>x.text||"").join("\n");
- if(!text)throw new Error("Gemini tidak mengembalikan hasil. Coba lagi.");
+ if(!response.ok){
+  const message=data.error?.message||data.message||`Gemini Interactions API gagal (HTTP ${response.status}).`;
+  if(/google.?search|grounding|not available|free tier|billing/i.test(message))throw new Error(`Gemini 3.8 Flash menolak Google Search: ${message} Periksa kelayakan/billing Google Search grounding pada project API kamu.`);
+  throw new Error(message);
+ }
+ const text=(data.steps||[]).filter(x=>x.type==="model_output").flatMap(x=>x.content||[]).filter(x=>x.type==="text").map(x=>x.text||"").join("\n") || data.output_text || "";
+ if(!text)throw new Error(data.status&&data.status!=="completed"?`Interaksi Gemini belum selesai (status: ${data.status}).` : "Gemini tidak mengembalikan hasil. Coba lagi.");
  let parsed;try{parsed=JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g,""));}catch{const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error("Format hasil Gemini tidak valid.");parsed=JSON.parse(m[0]);}
  const num=v=>Number.isFinite(Number(v))&&Number(v)>0?Number(v):null;
  const sources=Array.isArray(parsed.sources)?parsed.sources.filter(x=>x&&typeof x.url==="string"&&/^https?:\/\//.test(x.url)).slice(0,8):[];
@@ -66,7 +71,7 @@ async function geminiMusicSearch(env, input){
 
 async function handleApi(request,env,url){
  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
- if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY AI Music Finder",version:"2.8.0",geminiConfigured:Boolean(env.GEMINI_API_KEY)});
+ if(url.pathname==="/api/health"&&request.method==="GET")return json({ok:true,service:"CHORD SASY AI Music Finder",version:"2.9.0",geminiConfigured:Boolean(env.GEMINI_API_KEY)});
  if(url.pathname==="/api/ai/music-search"&&request.method==="POST"){const body=await bodyJson(request);try{return json(await geminiMusicSearch(env,body.input));}catch(e){return json({error:e.message||"Pencarian AI gagal."},502);}}
  if(url.pathname==="/api/lookup"&&request.method==="POST"){
   const body=await bodyJson(request),id=getVideoId(body.url||"");if(!id||!/^[\w-]{11}$/.test(id))return json({error:"Masukkan URL YouTube atau YouTube Music yang valid."},400);
