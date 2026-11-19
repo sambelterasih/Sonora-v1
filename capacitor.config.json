@@ -1,6 +1,6 @@
 {
-  "appId": "com.sonora.music",
-  "appName": "SONORA",
+  "appId": "com.chordsasy.musiclab",
+  "appName": "CHORD SASY / MUSIC LAB",
   "webDir": "public",
   "bundledWebRuntime": false
 }
